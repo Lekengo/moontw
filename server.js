@@ -264,7 +264,7 @@ async function createNotification(toUserId, fromUser, content, postId = -1, conn
   );
 }
 
-app.get("/", (req, res) => res.type("text/plain").send("Twitter IC API online - rework 1.11"));
+app.get("/", (req, res) => res.type("text/plain").send("Twitter IC API online - rework 1.12-fix"));
 
 app.get("/load", async (req, res) => {
   res.type("text/plain");
@@ -272,7 +272,7 @@ app.get("/load", async (req, res) => {
     const [rows] = await pool.query("SELECT NOW() AS fecha_actual");
     res.send(
       "OK AIVEN MYSQL\n" +
-      "API: Twitter IC rework 1.11\n" +
+      "API: Twitter IC rework 1.12-fix\n" +
       "Base usada: " + process.env.AIVEN_DATABASE + "\n" +
       "Fecha MySQL: " + rows[0].fecha_actual + "\n"
     );
@@ -540,8 +540,67 @@ app.get("/api/comment", async (req, res) => {
   }
 });
 
+
+app.get("/api/notifications/read", async (req, res) => {
+  try {
+    const user = await ensureUser(req.query.player, req.query.skin);
+    await pool.query(
+      "UPDATE ng_twitter_notificaciones SET leido=1 WHERE para_usuario_id=? AND leido=0",
+      [user.id]
+    );
+    ok(res, "notifications_marked", { unread_notifs: 0, server_time: nowUnix() });
+  } catch (e) {
+    fail(res, e.message);
+  }
+});
+
+app.get("/api/dms/read", async (req, res) => {
+  try {
+    const user = await ensureUser(req.query.player, req.query.skin);
+    await pool.query(
+      "UPDATE ng_twitter_dms SET leido=1 WHERE para_usuario_id=? AND leido=0",
+      [user.id]
+    );
+    ok(res, "dms_marked", { unread_dms: 0, server_time: nowUnix() });
+  } catch (e) {
+    fail(res, e.message);
+  }
+});
+
+app.get("/api/privacy", async (req, res) => {
+  try {
+    const user = await ensureUser(req.query.player, req.query.skin);
+    const kind = String(req.query.kind || "").toLowerCase();
+    const value = Math.min(Math.max(toInt(req.query.value, 0), 0), 3);
+
+    if (kind !== "dm" && kind !== "tag") {
+      return fail(res, "Tipo de privacidad invalido.");
+    }
+
+    const column = kind === "dm" ? "dm_privacidad" : "tag_privacidad";
+    await pool.query(
+      `UPDATE ng_twitter_usuarios SET ${column}=?, actualizado_en=? WHERE id=?`,
+      [value, nowUnix(), user.id]
+    );
+
+    const [[fresh]] = await pool.query(
+      "SELECT dm_privacidad, tag_privacidad FROM ng_twitter_usuarios WHERE id=? LIMIT 1",
+      [user.id]
+    );
+
+    ok(res, "privacy_updated", {
+      dm_privacy: fresh ? (fresh.dm_privacidad || 0) : 0,
+      tag_privacy: fresh ? (fresh.tag_privacidad || 0) : 0,
+      server_time: nowUnix()
+    });
+  } catch (e) {
+    fail(res, e.message);
+  }
+});
+
+
 process.on("unhandledRejection", err => {
   console.error("Unhandled rejection:", err);
 });
 
-app.listen(PORT, () => console.log("Twitter IC API rework 1.11 iniciado en puerto " + PORT));
+app.listen(PORT, () => console.log("Twitter IC API rework 1.12-fix iniciado en puerto " + PORT));
